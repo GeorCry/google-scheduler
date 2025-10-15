@@ -382,25 +382,29 @@ function rebuildAndApplyDuty() {
       let changed = false;
 
       for (let i = 0; i < data.length; i++) {
-        const rawName = String(data[i][1] || "").trim();
-        if (!rawHour || !nameCell || String(nameCell).trim() === "-") continue;
+  const rawHour = data[i][0];
+  const rawName = String(data[i][1] || "").trim();
+  const nameCell = data[i][1];
 
-        const nNorm = normalizeName(rawName);
-        const wasActive = data[i][3] === true;
-        const nowActive = !unavailable.has(nNorm) && !unavailable.has("@" + nNorm);
+  if (!rawHour || !nameCell || rawName === "-") continue;
 
-        if (wasActive !== nowActive) {
-          data[i][3] = nowActive;
-          changed = true;
+  const nNorm = normalizeName(rawName);
+  const wasActive = data[i][3] === true;
+  const nowActive = !unavailable.has(nNorm) && !unavailable.has("@" + nNorm);
 
-          const msg = nowActive
-            ? `${rawName} снова активен`
-            : `${rawName} временно исключён (sick/vacation)`;
+  if (wasActive !== nowActive) {
+    data[i][3] = nowActive;
+    changed = true;
 
-          ss.toast(msg, "Duty Update", 3);
-          Logger.log("🔔 " + msg);
-        }
-      }
+    const msg = nowActive
+      ? `${rawName} снова активен`
+      : `${rawName} временно исключён (sick/vacation)`;
+
+    ss.toast(msg, "Duty Update", 3);
+    Logger.log("🔔 " + msg);
+  }
+}
+
 
       if (changed) {
         range.setValues(data);

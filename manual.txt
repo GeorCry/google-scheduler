@@ -18,3 +18,53 @@
 
 Последняя вкладка breakschedule с первым запуском подтягивает время от 0 до 00, а так же подсвечивает зеленым, кто сейчас дежурит, а желтым, кто следующий. Записывать данные так же как и везде, например: "@g.kraynik" если в Sheet1, то и в остальных должно быть так же. Можно несколько участников вставлять на промежуток времени через запятую: "@g.kraynik, @r.gabibov". 
 Статусы и брейков и дежурки автоматически подтягиваются в Sheet1, поэтому всё динамично.
+
+In the table, several statuses are defined:
+
+Permanent: SICK / VACATION
+
+Temporary: PAUSE — used when someone steps away for a short time or has an unstable internet connection.
+
+In the name column, we define the nicknames of users. These names must be identical across all related sheets to ensure everything works correctly.
+
+In the urg/non-urg cells, we mark urgent and non-urgent cases using the value “1”.
+When someone’s break or duty shift is approaching, about 10 minutes before it starts, the table will automatically display “break coming” in the urgent cell, and then “break” once it begins.
+The same applies to duty shifts — updates appear in the duty column.
+
+To make the table automatically clear the “1” values, simply finish filling in the cells and move the selection away from the last edited cell. Any other statuses will not interfere with this reset mechanism.
+All logged “1” entries are stored in the logs sheet, which is then used to generate monthly statistics in the DailyLog sheet. The DailyLog is automatically cleared each month.
+
+DutySchedule Sheet
+
+The DutySchedule sheet loads automatically on the first launch and numbers the hours from 0 to 23.
+If you are not on duty during certain hours, just put a “-” in your name’s row for those hours — the table will ignore these cells.
+
+Again, names must exactly match those on Sheet1.
+The manual field in DutySchedule acts as a flag that indicates the duty assignment was made manually and should not be changed automatically.
+
+If manual = true, the algorithm will not alter that hour, even if the person is unavailable or the queue is empty.
+In other words, manual assignments are locked and won’t be overwritten by the automatic scheduler.
+
+DutyQueue Sheet
+
+The DutyQueue sheet includes a mechanism that automatically manages the duty rotation, taking into account who is sick, currently on a break, etc. It updates and synchronizes this information automatically.
+
+To switch to manual mode and disable automatic distribution, set the Manual field to True.
+This disables the automatic assignment logic.
+
+In DutySchedule, the Manual flag applies to a specific hour — it prevents automatic assignment for that time slot.
+In DutyQueue, the Manual flag applies to a specific person — it prevents automatic changes to that user’s position or assignment.
+
+If you prefer to handle the queue manually, simply set manual = true everywhere, and the auto-scheduler will not make any changes.
+
+BreakSchedule Sheet
+
+The BreakSchedule sheet automatically loads the time range from 0:00 to 00:00 on first launch.
+It highlights in green who is currently on duty and in yellow who will be next.
+
+Data is entered the same way as elsewhere — for example:
+@g.kraynik (and the same format must be used consistently across all sheets, including Sheet1).
+You can list multiple participants for a time range separated by commas, e.g.:
+@g.kraynik, @r.gabibov.
+
+Break and duty statuses are automatically synced with Sheet1, so everything stays fully dynamic.

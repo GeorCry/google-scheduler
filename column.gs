@@ -59,19 +59,37 @@ function handleEdit(e) {
       (!newValue && isStatus(lowerOld));
 
     mute(() => {
-      const cleared = clearOnesIfAllFilled(sheet, col);
-      if (cleared) {
-        appendLogRow([timestampVal, sheet.getRange(row, 1).getValue(), sheetName, `Clear ${type}`, "", editor]);
-      }
+  // 1️⃣ Если все ячейки в колонке заполнены — очищаем "1" и логируем
+  const cleared = clearOnesIfAllFilled(sheet, col);
+  if (cleared) {
+    appendLogRow([
+      timestampVal,
+      sheet.getRange(row, 1).getValue(),
+      sheetName,
+      `Clear ${type}`,
+      "",
+      editor
+    ]);
+  }
 
-      applyStylesSafe(sheet);
-      colorizeStatusesAndConflicts(sheet);
+  // 2️⃣ Лёгкое оформление — без тяжёлых операций
+  applyStylesSafe(sheet);
 
-      if (shouldRebuild) {
-        Logger.log("♻️ Изменение статусов — пересчитываем очередь duty");
-        rebuildAndApplyDuty();
-      }
-    });
+  // 3️⃣ Если изменён статус — сначала пересобираем очередь duty
+  if (shouldRebuild) {
+    Logger.log("♻️ Изменение статусов — пересчитываем очередь duty");
+    rebuildAndApplyDuty();
+  }
+
+  // 4️⃣ Только теперь применяем цвета (чтобы Duty был актуальный)
+  colorizeStatusesAndConflicts(sheet);
+
+  // 5️⃣ Быстрая вставка брейков
+  autoInsertBreaks();
+});
+
+
+
 
     exportMonthStats();
 
@@ -447,3 +465,4 @@ function sender() {
   exportMonthStats();
   sendDailyLogByMail();
 }
+

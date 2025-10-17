@@ -4,6 +4,7 @@ const PROP_LAST_LOG = 'LAST_LOG';
 
 /***** Основной обработчик правок *****/
 function handleEdit(e) {
+  const start = Date.now();
   try {
     if (!e || !e.range) {
       Logger.log("⚠️ handleEdit вызван вручную");
@@ -18,9 +19,6 @@ function handleEdit(e) {
     const col = range.getColumn();
     const row = range.getRow();
     const props = PropertiesService.getDocumentProperties();
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(5000);
-
     const editor = Session.getEffectiveUser().getEmail();
     const timestampVal = timestamp();
 
@@ -29,72 +27,67 @@ function handleEdit(e) {
       col === 3 ? "Non-urgent" :
       null;
 
-    // Только если колонка релевантная
-    if (!type) return;
+    if (!type) return; // не наша колонка
 
     const newValue = e.value || "";
     const oldValue = e.oldValue || "";
-    const lowerNew = String(newValue).toLowerCase();
-    const lowerOld = String(oldValue).toLowerCase();
+    if (newValue === oldValue) return;
 
-    const isStatus = (val) => ["sick", "vacation", "break"].includes(String(val).toLowerCase());
+    const lowerNew = newValue.toLowerCase();
+    const lowerOld = oldValue.toLowerCase();
 
-    const isRelevantChange =
-      newValue !== oldValue ||
-      (newValue === "" && oldValue);
+    const isStatus = v => ["sick", "vacation", "break", "pause"].includes(v);
+    const shouldRebuild = isStatus(lowerNew) || isStatus(lowerOld);
 
-    if (!isRelevantChange) return;
-
-    // 🟢 Логирование
     const key = [sheetName, row, col, type, newValue, editor].join("|");
     if (props.getProperty(PROP_LAST_LOG) !== key) {
       appendLogRow([timestampVal, sheet.getRange(row, 1).getValue(), sheetName, type, newValue, editor]);
       props.setProperty(PROP_LAST_LOG, key);
     }
 
-    // 🧩 Проверяем, нужно ли пересобирать очередь
-    const shouldRebuild =
-      isStatus(lowerNew) ||
-      (lowerOld && isStatus(lowerOld)) ||
-      (!newValue && isStatus(lowerOld));
+    const lock = LockService.getDocumentLock();
+    if (!lock.tryLock(5000)) {
+      Logger.log("⚠️ handleEdit пропущен — не удалось получить lock");
+      return;
+    }
 
     mute(() => {
-  // 1️⃣ Если все ячейки в колонке заполнены — очищаем "1" и логируем
-  const cleared = clearOnesIfAllFilled(sheet, col);
-  if (cleared) {
-    appendLogRow([
-      timestampVal,
-      sheet.getRange(row, 1).getValue(),
-      sheetName,
-      `Clear ${type}`,
-      "",
-      editor
-    ]);
-  }
+      const cleared = clearOnesIfAllFilled(sheet, col);
+      if (cleared) {
+        appendLogRow([
+          timestampVal,
+          sheet.getRange(row, 1).getValue(),
+          sheetName,
+          `Clear ${type}`,
+          "",
+          editor
+        ]);
+      }
 
-  // 2️⃣ Лёгкое оформление — без тяжёлых операций
-  applyStylesSafe(sheet);
+      applyStylesSafe(sheet);
 
-  // 3️⃣ Если изменён статус — сначала пересобираем очередь duty
-  if (shouldRebuild) {
-    Logger.log("♻️ Изменение статусов — пересчитываем очередь duty");
-    rebuildAndApplyDuty();
-  }
+      if (shouldRebuild) {
+        Logger.log("♻️ Пересборка Duty...");
+        safeRun(rebuildAndApplyDuty, "rebuildAndApplyDuty");
+      }
 
-  // 4️⃣ Только теперь применяем цвета (чтобы Duty был актуальный)
-  colorizeStatusesAndConflicts(sheet);
+      safeRun(() => colorizeStatusesAndConflicts(sheet), "colorizeStatusesAndConflicts");
+      safeRun(autoInsertBreaks, "autoInsertBreaks");
+    });
 
-  // 5️⃣ Быстрая вставка брейков
-  autoInsertBreaks();
-});
-
-
-
-
-    exportMonthStats();
+    // Статистика — отдельно, чтобы не грузить onEdit
+    if (Date.now() - start < 15000) { // выполняется быстро
+      safeRun(exportMonthStats, "exportMonthStats");
+    } else {
+      Logger.log("⏩ Пропуск exportMonthStats — скрипт занял >15 сек");
+    }
 
   } catch (err) {
     Logger.log("❌ Ошибка handleEdit: " + err);
+  } finally {
+    try {
+      LockService.getDocumentLock().releaseLock();
+    } catch (_) {}
   }
 }
 

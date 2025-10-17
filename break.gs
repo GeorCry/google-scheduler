@@ -71,92 +71,54 @@ function highlightBreakSlots(currentSlot, nextSlot) {
 
   const lastRow = sheet.getLastRow();
   const range = sheet.getRange(2, 1, lastRow - 1, 2);
-
-  // Сбрасываем стиль
-  range.setBackground(null).setFontWeight("normal");
-
   const values = range.getValues();
+  const backgrounds = range.getBackgrounds();
+  const fonts = range.getFontWeights();
 
+  // Сбрасываем всё за один проход
   for (let i = 0; i < values.length; i++) {
-    const timeRange = values[i][0];
-    const match = String(timeRange).match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
+    const timeRange = String(values[i][0]);
+    const match = timeRange.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
     if (!match) continue;
 
     const start = parseInt(match[1]) * 60 + parseInt(match[2]);
     const end = parseInt(match[3]) * 60 + parseInt(match[4]);
 
     if (currentSlot && start === currentSlot.start && end === currentSlot.end) {
-      sheet.getRange(i + 2, 1, 1, 2)
-        .setBackground("#C6EFCE") // ярко-зелёный
-        .setFontWeight("bold");
-    }
-
-    if (nextSlot && start === nextSlot.start && end === nextSlot.end) {
-      sheet.getRange(i + 2, 1, 1, 2)
-        .setBackground("#FFF2CC") // светло-жёлтый
-        .setFontWeight("bold");
+      backgrounds[i][0] = "#C6EFCE";
+      backgrounds[i][1] = "#C6EFCE";
+      fonts[i][0] = "bold";
+      fonts[i][1] = "bold";
+    } else if (nextSlot && start === nextSlot.start && end === nextSlot.end) {
+      backgrounds[i][0] = "#FFF2CC";
+      backgrounds[i][1] = "#FFF2CC";
+      fonts[i][0] = "bold";
+      fonts[i][1] = "bold";
+    } else {
+      backgrounds[i][0] = null;
+      backgrounds[i][1] = null;
+      fonts[i][0] = "normal";
+      fonts[i][1] = "normal";
     }
   }
+
+  range.setBackgrounds(backgrounds);
+  range.setFontWeights(fonts);
 }
+
 
 /**********************
  * Создание стилизованного листа BreakSchedule
  **********************/
+const CACHE_EXPIRY = 60; // секунд
 function readBreakSchedule() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get("breakSchedule");
+  if (cached) return JSON.parse(cached);
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName("BreakSchedule");
-
-  if (!sheet) {
-    sheet = ss.insertSheet("BreakSchedule");
-    sheet.getRange("A1:B1")
-      .setValues([["🕒 Time Range", "👥 Names"]])
-      .setFontWeight("bold")
-      .setFontSize(12)
-      .setBackground("#FFD966")
-      .setHorizontalAlignment("center")
-      .setVerticalAlignment("middle");
-
-    const timeSlots = [];
-    for (let h = 0; h < 24; h++) {
-      for (let m = 0; m < 60; m += 30) {
-        const hh = ("0" + h).slice(-2);
-        const mm = ("0" + m).slice(-2);
-        const endH = ("0" + ((h + (m === 30 ? 1 : 0)) % 24)).slice(-2);
-        const endM = m === 30 ? "00" : "30";
-        timeSlots.push([`${hh}:${mm}-${endH}:${endM}`, ""]);
-      }
-    }
-
-    sheet.getRange(2, 1, timeSlots.length, 2).setValues(timeSlots);
-
-    const examples = [
-      ["02:00-03:00", "@g.kraynik"],
-      ["04:00-05:00", "@stepan.denisov, @m.poryvay"],
-      ["05:00-06:00", "@v.nasirov, @k.vagabova"],
-      ["06:00-07:00", "@r.gabibov"]
-    ];
-    for (const [time, names] of examples) {
-      const range = sheet.createTextFinder(time).findNext();
-      if (range) sheet.getRange(range.getRow(), 2).setValue(names);
-    }
-
-    sheet.setColumnWidths(1, 1, 130);
-    sheet.setColumnWidths(2, 1, 280);
-
-    sheet.getRange("A:B")
-      .setHorizontalAlignment("center")
-      .setVerticalAlignment("middle")
-      .setFontSize(11);
-
-    sheet.getRange(1, 1, timeSlots.length + 1, 2)
-      .setBorder(true, true, true, true, true, true, "black", SpreadsheetApp.BorderStyle.SOLID);
-
-    sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, timeSlots.length + 1, 2).createFilter();
-
-    SpreadsheetApp.flush();
-    return [];
-  }
+  const sheet = ss.getSheetByName("BreakSchedule");
+  if (!sheet) return [];
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
@@ -167,7 +129,6 @@ function readBreakSchedule() {
   for (let i = 0; i < data.length; i++) {
     const [timeRange, namesRaw] = data[i];
     if (!timeRange) continue;
-
     const m = String(timeRange).match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
     if (!m) continue;
 
@@ -180,8 +141,10 @@ function readBreakSchedule() {
     result.push({ start, end, names });
   }
 
+  cache.put("breakSchedule", JSON.stringify(result), CACHE_EXPIRY);
   return result;
 }
+
 
 
 /**********************
@@ -219,3 +182,4 @@ function logError(msg) {
   log.appendRow([new Date(), msg]);
   Logger.log(msg);
 }
+

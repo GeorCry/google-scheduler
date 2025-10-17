@@ -182,4 +182,3 @@ function logError(msg) {
   log.appendRow([new Date(), msg]);
   Logger.log(msg);
 }
-

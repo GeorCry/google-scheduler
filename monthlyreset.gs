@@ -5,7 +5,7 @@
  */
 function autoResetLogs() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const logSheet = ss.getSheetByName("Log");
+  const logSheet = ss.getSheetByName("Logs");
   const dailySheet = ss.getSheetByName("DailyLog");
 
   const today = new Date();

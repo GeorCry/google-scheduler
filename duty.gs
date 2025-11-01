@@ -361,90 +361,96 @@ function updateDutyStatus() {
 /* -------------------------
    5. Главная функция — обновление Active и расписания
    ------------------------ */
+/**********************
+ * 5. Главная функция — обновление Active и расписания (оптимизировано)
+ **********************/
 function rebuildAndApplyDuty() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureDutySheets();
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const queueSheet = ss.getSheetByName("DutyQueue");
-  const dutySheet = ss.getSheetByName("DutySchedule");
+  try {
+    const queueSheet = ss.getSheetByName("DutyQueue");
+    const dutySheet = ss.getSheetByName("DutySchedule");
 
-  // Принудительно применим последние правки
-  SpreadsheetApp.flush();
-  Utilities.sleep(150);
+    // Принудительно применим последние правки
+    SpreadsheetApp.flush();
+    Utilities.sleep(100);
 
-  const unavailable = getUnavailable();
-  // === 1️⃣ Проверка доступности участников очереди ===
-  if (queueSheet) {
-    const rows = Math.max(queueSheet.getLastRow() - 1, 0);
-    if (rows > 0) {
-      const range = queueSheet.getRange(2, 1, rows, 4);
-      const data = range.getValues();
-      let changed = false;
+    const unavailable = getUnavailable();
 
-      for (let i = 0; i < data.length; i++) {
-  const rawHour = data[i][0];
-  const rawName = String(data[i][1] || "").trim();
-  const nameCell = data[i][1];
+    // === 1️⃣ Проверка доступности участников очереди ===
+    if (queueSheet) {
+      const rows = Math.max(queueSheet.getLastRow() - 1, 0);
+      if (rows > 0) {
+        const range = queueSheet.getRange(2, 1, rows, 4);
+        const data = range.getValues();
+        let changed = false;
 
-  if (!rawHour || !nameCell || rawName === "-") continue;
+        for (let i = 0; i < data.length; i++) {
+          const rawName = String(data[i][1] || "").trim();
+          if (!rawName || rawName === "-") continue;
 
-  const nNorm = normalizeName(rawName);
-  const wasActive = data[i][3] === true;
-  const nowActive = !unavailable.has(nNorm) && !unavailable.has("@" + nNorm);
+          const nNorm = normalizeName(rawName);
+          const wasActive = data[i][3] === true;
+          const nowActive = !unavailable.has(nNorm) && !unavailable.has("@" + nNorm);
 
-  if (wasActive !== nowActive) {
-    data[i][3] = nowActive;
-    changed = true;
+          if (wasActive !== nowActive) {
+            data[i][3] = nowActive;
+            changed = true;
+            const msg = nowActive
+              ? `${rawName} снова активен`
+              : `${rawName} временно исключён (sick/vacation)`;
+            Logger.log("🔔 " + msg);
+          }
+        }
 
-    const msg = nowActive
-      ? `${rawName} снова активен`
-      : `${rawName} временно исключён (sick/vacation)`;
-
-    ss.toast(msg, "Duty Update", 3);
-    Logger.log("🔔 " + msg);
-  }
-}
-
-
-      if (changed) {
-        range.setValues(data);
-        SpreadsheetApp.flush();
-        Utilities.sleep(150);
+        if (changed) {
+          range.setValues(data);
+          SpreadsheetApp.flush();
+        }
       }
     }
-  }
 
-  // === 2️⃣ Нормализуем ключи расписания (чтобы "0" → "00") ===
-  const duty = {};
-  if (dutySheet) {
-    const data = dutySheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
-      const rawHour = data[i][0];
-      const nameCell = data[i][1];
-      if (!rawHour || !nameCell) continue;
-
-      const hourKey = String(rawHour).padStart(2, "0"); // "0" → "00"
-      duty[hourKey] = { name: String(nameCell).trim() };
+    // === 2️⃣ Нормализуем расписание ===
+    const duty = {};
+    if (dutySheet) {
+      const data = dutySheet.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        const rawHour = data[i][0];
+        const nameCell = data[i][1];
+        if (!rawHour || !nameCell) continue;
+        const hourKey = String(rawHour).padStart(2, "0");
+        duty[hourKey] = { name: String(nameCell).trim() };
+      }
     }
+
+    // === 3️⃣ Текущее/следующее дежурство (для лога) ===
+    const tz = Session.getScriptTimeZone() || "GMT+3";
+    const now = new Date();
+    const curH = Utilities.formatDate(now, tz, "HH");
+    const nextH = Utilities.formatDate(new Date(now.getTime() + 3600000), tz, "HH");
+    const curDuty = duty[curH]?.name || "";
+    const nextDuty = duty[nextH]?.name || "";
+    Logger.log(`🕛 Сейчас ${curH}:00 — OnDuty: ${curDuty} → Next: ${nextDuty}`);
+
+    // === 4️⃣ Пересчёт очереди и обновление Duty статусов ===
+    ss.toast("⏳ Пересчёт расписания...", "Duty Scheduler", 3);
+
+    const newSchedule = autoDutyScheduler();
+
+    // Пауза между большими операциями (Google любит передышку)
+    Utilities.sleep(200);
+
+    updateDutyStatus();
+
+    SpreadsheetApp.flush();
+    ss.toast("✅ Очередь и дежурства обновлены", "Duty Scheduler", 3);
+    Logger.log("✅ Полное обновление завершено без таймаута");
+
+  } catch (err) {
+    Logger.log("❌ Ошибка в rebuildAndApplyDuty: " + err);
+    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Ошибка при обновлении дежурств", "Duty Scheduler", 5);
   }
-
-  // === 3️⃣ Определяем текущего и следующего дежурного ===
-  const tz = Session.getScriptTimeZone() || "GMT+3";
-  const now = new Date();
-  const curH = Utilities.formatDate(now, tz, "HH");
-  const nextH = Utilities.formatDate(new Date(now.getTime() + 3600000), tz, "HH");
-
-  const curDuty = duty[curH]?.name || "";
-  const nextDuty = duty[nextH]?.name || "";
-
-  Logger.log(`🕛 Текущее время: ${curH}:00 — OnDuty: ${curDuty} → Next: ${nextDuty}`);
-
-  // === 4️⃣ Пересчёт очереди и обновление Duty статусов ===
-  autoDutyScheduler();
-  Utilities.sleep(150);
-  updateDutyStatus();
-
-  ss.toast("✅ Очередь и дежурства обновлены", "Duty Scheduler", 3);
-  Logger.log("✅ Полное обновление завершено");
 }
+
 

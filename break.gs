@@ -4,7 +4,11 @@
 /**********************
  * Автоматическая вставка брейков + подсветка в BreakSchedule
  **********************/
+/**********************
+ * Автоматическая вставка брейков + фильтрация служебных строк
+ **********************/
 function autoInsertBreaks() {
+  const startTime = Date.now();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Sheet1");
   if (!sheet) return logError("❌ Лист Sheet1 не найден!");
@@ -13,7 +17,7 @@ function autoInsertBreaks() {
   if (!lock.tryLock(5000)) return;
 
   try {
-    const schedule = readBreakSchedule(); // читаем расписание (и стилизованный лист)
+    const schedule = readBreakSchedule();
     if (!schedule.length) return logError("⚠️ Пустое расписание брейков");
 
     const now = new Date();
@@ -22,44 +26,58 @@ function autoInsertBreaks() {
     const currentSlot = getCurrentSlot(schedule, currentMinutes);
     const nextSlot = getNextSlot(schedule, currentSlot);
 
-    // Подсветка текущего и следующего
+    // Подсветка активных слотов
     highlightBreakSlots(currentSlot, nextSlot);
 
+    // Кэшированные имена
     const currentNames = new Set(currentSlot?.names || []);
     const nextNames = new Set(nextSlot?.names || []);
 
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
 
-    const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => String(r[0]).trim());
-    const urgentVals = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+    // Чтение всех имён
+    const nameRange = sheet.getRange(2, 1, lastRow - 1, 1);
+    const urgentRange = sheet.getRange(2, 2, lastRow - 1, 1);
+    const names = nameRange.getValues().map(r => String(r[0]).trim());
+    const urgentVals = urgentRange.getValues();
 
+    const forbidden = ["name", "system"];
+    const minutes = now.getMinutes();
+
+    // Обработка в памяти
     for (let i = 0; i < names.length; i++) {
       const name = names[i];
-      if (!name) continue;
+      if (!name || forbidden.includes(name.toLowerCase())) continue;
 
       const currentVal = String(urgentVals[i][0] || "").toLowerCase();
-      const isSickOrVacation = ["sick", "vacation"].includes(currentVal);
-      if (isSickOrVacation) continue;
+      if (["sick", "vacation"].includes(currentVal)) continue;
 
       if (currentNames.has(name)) {
         urgentVals[i][0] = "break";
-      } else if (nextNames.has(name) && now.getMinutes() >= 50) {
+      } else if (nextNames.has(name) && minutes >= 50) {
         urgentVals[i][0] = "break coming";
       } else if (["break", "break coming"].includes(currentVal)) {
         urgentVals[i][0] = "";
       }
     }
 
-    safeSetValues(sheet.getRange(2, 2, lastRow - 1, 1), urgentVals);
+    // Обновление листа за один вызов
+    urgentRange.setValues(urgentVals);
+
+    // Цветовая подсветка
     colorizeStatusesAndConflicts(sheet);
 
+    const execTime = (Date.now() - startTime) / 1000;
+    Logger.log(`✅ autoInsertBreaks завершён за ${execTime.toFixed(1)} сек.`);
   } catch (err) {
     logError("autoInsertBreaks: " + err);
   } finally {
     lock.releaseLock();
   }
 }
+
+
 
 /**********************
  * Подсветка активного и следующего слота

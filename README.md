@@ -1,5 +1,6 @@
 That is a smart auto-working sheduler that must help you to improve and make the job easier for the most of the people.
 If you have any ideas please share with me. DM to me(Georgiy Kraynik)
+Please watch it as a code(much easier to read)
 That part necessary and important be sure after importing the code add a triggers (it makes it work, later I will attach the link with a screen recorded instructions)
 It's necessary to deploy triggers and set them up correctly to make a scheduler works
 RebuildAndApplyDuty - time based - minutes timer - every minute

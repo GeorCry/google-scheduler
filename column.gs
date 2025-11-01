@@ -72,28 +72,16 @@ function handleEdit(e) {
       }
 
       safeRun(() => colorizeStatusesAndConflicts(sheet), "colorizeStatusesAndConflicts");
-      safeRun(autoInsertBreaks, "autoInsertBreaks");
+
+      // ❌ autoInsertBreaks удалён — теперь он работает по триггеру
     });
 
-    // Статистика — отдельно, чтобы не грузить onEdit
-    if (Date.now() - start < 15000) { // выполняется быстро
-      safeRun(exportMonthStats, "exportMonthStats");
-    } else {
-      Logger.log("⏩ Пропуск exportMonthStats — скрипт занял >15 сек");
-    }
-
   } catch (err) {
-    Logger.log("❌ Ошибка handleEdit: " + err);
+    logError("handleEdit: " + err);
   } finally {
-    try {
-      LockService.getDocumentLock().releaseLock();
-    } catch (_) {}
+    Logger.log(`⏱ handleEdit выполнен за ${(Date.now() - start) / 1000}s`);
   }
 }
-
-
-
-
 
 /***** Хелперы *****/
 function timestamp() {
@@ -252,10 +240,10 @@ function exportMonthStats() {
   // Подсчёт
   const stats = {};
   data.forEach(row => {
-    const rawName = row[1];
-    const type = row[3]; // "Urgent" | "Non-urgent" | др.
-    const name = normalizeName(rawName);
-    if (!name) return;
+  const rawName = row[1];
+  const type = row[3];
+  const name = normalizeName(rawName);
+  if (!name || name.toLowerCase() === "name") return; // пропускаем заголовки и пустые строки
 
     if (!stats[name]) stats[name] = { u: 0, n: 0 };
     if (type === "Urgent") stats[name].u++;
@@ -279,21 +267,23 @@ function exportMonthStats() {
 
   daily.getRange(cursor, 1, 1, 4).setValues([totalsRow]);
 
-  // Оформление
+   // === Форматирование ===
   daily.setFrozenRows(1);
   daily.setColumnWidths(1, 1, 180); // Name
   daily.setColumnWidths(2, 3, 120); // цифры
 
-  // Общий шрифт чуть крупнее
-  daily.getRange(1, 1, cursor, 4).setFontSize(12);
+  daily.getRange(1, 1, cursor, 4)
+    .setFontSize(12)
+    .setBorder(true, true, true, true, true, true, "#c0c0c0", SpreadsheetApp.BorderStyle.SOLID);
 
-  // Шапка жирным, яркая
+  // Шапка жирным, жёлтым
   daily.getRange(1, 1, 1, 4)
-    .setFontWeight("bold").setFontSize(14)
+    .setFontWeight("bold")
+    .setFontSize(14)
     .setBackground("#FFD966")
     .setHorizontalAlignment("center");
 
-  // Имена жирным слева
+  // Имена слева, жирным
   if (lines.length) {
     daily.getRange(2, 1, lines.length, 1)
       .setFontWeight("bold")
@@ -301,19 +291,32 @@ function exportMonthStats() {
   }
 
   // Числа по центру
-  daily.getRange(2, 2, Math.max(1, lines.length + 1), 3).setHorizontalAlignment("center");
+  daily.getRange(2, 2, Math.max(1, lines.length + 1), 3)
+    .setHorizontalAlignment("center");
 
-  // Итого внизу зелёным и жирным
+  // Полоски вручную (чередуем цвет строк)
+  if (lines.length > 1) {
+    for (let i = 0; i < lines.length; i++) {
+      const rowNum = 2 + i;
+      const color = i % 2 === 0 ? "#ffffff" : "#f9f9f9";
+      daily.getRange(rowNum, 1, 1, 4).setBackground(color);
+    }
+  }
+
+  // Итого внизу — зелёный фон и жирный шрифт
   daily.getRange(cursor, 1, 1, 4)
     .setFontWeight("bold")
     .setBackground("#C6E0B4")
-    .setHorizontalAlignment("center");
+    .setHorizontalAlignment("center")
+    .setBorder(true, true, true, true, null, null, "#7f7f7f", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  // Полосатая заливка строк (без шапки)
-  if (cursor > 2) {
-    daily.getRange(2, 1, cursor - 2, 4).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
-  }
+  Logger.log(`✅ exportMonthStats завершён. Записано ${lines.length} строк.`);
 }
+
+
+
+
+
 
 function colorizeStatusesAndConflicts(sheet) {
   fixHeader(sheet);
@@ -377,9 +380,6 @@ if (dutyVal === "on duty") {
 } else if (dutyVal === "duty coming") {
   dColor = "#00e300";
 }
-
-
-
     breakColors.push([bColor]);
     nonUrgColors.push([nColor]);
     dutyColors.push([dColor]);
@@ -457,5 +457,13 @@ function fixTableBorders(sheet) {
 function sender() {
   exportMonthStats();
   sendDailyLogByMail();
+}
+
+function safeRun(fn, name) {
+  try {
+    fn();
+  } catch (err) {
+    Logger.log(`⚠️ Ошибка в ${name}: ${err}`);
+  }
 }
 

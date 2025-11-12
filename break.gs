@@ -9,12 +9,13 @@
  **********************/
 function autoInsertBreaks() {
   const startTime = Date.now();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.getActiveSpreadsheet(); 
   const sheet = ss.getSheetByName("Sheet1");
   if (!sheet) return logError("❌ Лист Sheet1 не найден!");
 
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return;
+if (!lock.tryLock(30000)) return logError("⏳ autoInsertBreaks: занято другим процессом");
+
 
   try {
     const schedule = readBreakSchedule();
@@ -90,38 +91,47 @@ function highlightBreakSlots(currentSlot, nextSlot) {
   const lastRow = sheet.getLastRow();
   const range = sheet.getRange(2, 1, lastRow - 1, 2);
   const values = range.getValues();
-  const backgrounds = range.getBackgrounds();
-  const fonts = range.getFontWeights();
+  const backgrounds = [];
+  const fonts = [];
 
-  // Сбрасываем всё за один проход
   for (let i = 0; i < values.length; i++) {
-    const timeRange = String(values[i][0]);
-    const match = timeRange.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
-    if (!match) continue;
+    const [timeRange] = values[i];
+    const m = String(timeRange).match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
+    if (!m) {
+      backgrounds.push(["white", "white"]);
+      fonts.push(["normal", "normal"]);
+      continue;
+    }
 
-    const start = parseInt(match[1]) * 60 + parseInt(match[2]);
-    const end = parseInt(match[3]) * 60 + parseInt(match[4]);
+    const start = parseInt(m[1]) * 60 + parseInt(m[2]);
+    const end = parseInt(m[3]) * 60 + parseInt(m[4]);
 
     if (currentSlot && start === currentSlot.start && end === currentSlot.end) {
-      backgrounds[i][0] = "#C6EFCE";
-      backgrounds[i][1] = "#C6EFCE";
-      fonts[i][0] = "bold";
-      fonts[i][1] = "bold";
+      backgrounds.push(["#C6EFCE", "#C6EFCE"]);
+      fonts.push(["bold", "bold"]);
     } else if (nextSlot && start === nextSlot.start && end === nextSlot.end) {
-      backgrounds[i][0] = "#FFF2CC";
-      backgrounds[i][1] = "#FFF2CC";
-      fonts[i][0] = "bold";
-      fonts[i][1] = "bold";
+      backgrounds.push(["#FFF2CC", "#FFF2CC"]);
+      fonts.push(["bold", "bold"]);
     } else {
-      backgrounds[i][0] = null;
-      backgrounds[i][1] = null;
-      fonts[i][0] = "normal";
-      fonts[i][1] = "normal";
+      backgrounds.push(["white", "white"]);
+      fonts.push(["normal", "normal"]);
     }
   }
 
-  range.setBackgrounds(backgrounds);
-  range.setFontWeights(fonts);
+  safeSet(range, backgrounds, fonts);
+}
+
+function safeSet(range, backgrounds, fonts) {
+  for (let i = 0; i < 3; i++) {
+    try {
+      range.setBackgrounds(backgrounds);
+      range.setFontWeights(fonts);
+      return;
+    } catch (e) {
+      Utilities.sleep(500 * (i + 1));
+    }
+  }
+  throw new Error("safeSet: failed to update highlights");
 }
 
 
